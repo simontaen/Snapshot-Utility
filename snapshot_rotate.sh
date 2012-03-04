@@ -42,8 +42,8 @@ while $GETOPT w:m:d:s:h flag
 do
 	case $flag in
 		w)	WORKING_DIR="$OPTARG";
-			if [ ! -d $WORKING_DIR ] ; then
-				$ECHO Error: $WORKING_DIR isn\'t a valid directory. ; exit 1;
+			if [ ! -d "$WORKING_DIR" ] ; then
+				$ECHO Error: "$WORKING_DIR" isn\'t a valid directory. ; exit 1;
 			fi;;
 		m)	BKP_MODE="$OPTARG"
 			case $BKP_MODE in
@@ -99,10 +99,10 @@ esac
 #
 
 
-FIND_RESULT=`$FIND $WORKING_DIR -name $D_SNAPSHOT -type d -maxdepth 2`
+FIND_RESULT=`$FIND "$WORKING_DIR" -name $D_SNAPSHOT -type d -maxdepth 2`
 
 if [ -z "$FIND_RESULT" ] ; then
-    $ECHO Error: No directories named $D_SNAPSHOT in $WORKING_DIR. ; exit 1;
+    $ECHO Error: No directories named $D_SNAPSHOT in "$WORKING_DIR". ; exit 1;
 fi
 
 ##############################################################################
@@ -112,8 +112,8 @@ fi
 # ends at EOF
 for DESTINATION_DIR in $FIND_RESULT; do
 
-if [ ! -d $DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT ] ; then
-    $ECHO $DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT isn\'t a valid directory. Skipping... ;
+if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" ] ; then
+    $ECHO "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" isn\'t a valid directory. Skipping... ;
     continue ;
 fi
 
@@ -122,23 +122,23 @@ fi
 # delete the oldest snapshot in background, if it exists:
 #
 
-if [ -d $DESTINATION_DIR/$OLDEST_BKP ] ; then
-	$MV $DESTINATION_DIR/$OLDEST_BKP \
-		$DESTINATION_DIR/$OLDEST_BKP.delete
-	$RM -rf $DESTINATION_DIR/$OLDEST_BKP.delete &
+if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
+	$MV "$DESTINATION_DIR/$OLDEST_BKP" \
+		"$DESTINATION_DIR/$OLDEST_BKP.delete"
+	$RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 fi
 
 ##############################################################################
 # make a hard-link-only (except for dirs) copy of
-# NEWEST_OF_SRC_SNAPSHOT, assuming that exists, into OLDEST_BKP
+# NEWEST_OF_SRC_SNAPSHOT into OLDEST_BKP
 #
 
 $RSYNC \
 	-ah --delete --delete-excluded \
-	--link-dest=$DESTINATION_DIR/$NEWEST_BKP \
+	--link-dest="$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" \
 	$EXCLUDE_LINE \
 	--stats \
-	$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT/ $DESTINATION_DIR/$OLDEST_BKP/ ;
+	"$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT/" "$DESTINATION_DIR/$OLDEST_BKP/" ;
 
 ##############################################################################
 # NOTE: do *not* update the mtime of daily.0; it will reflect

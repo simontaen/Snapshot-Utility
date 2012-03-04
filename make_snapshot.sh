@@ -39,8 +39,8 @@ while $GETOPT s:d:f:m:eh flag
 do
 	case $flag in
 		s)	SOURCE_DIR="$OPTARG";
-			if [ ! -d $SOURCE_DIR ] ; then
-				$ECHO Error: $SOURCE_DIR isn\'t a valid directory. ; exit 1;
+			if [ ! -d "$SOURCE_DIR" ] ; then
+				$ECHO Error: "$SOURCE_DIR" isn\'t a valid directory. ; exit 1;
 			fi;;
     	d) DESTINATION_DIR="$OPTARG";;
         f) 	EXCLUDE_FILE="$OPTARG";
@@ -71,7 +71,7 @@ fi;
 
 ##############################################################################
 # advanced checking of SSH arguments
-# and $DESTINATION_DIR (which could be on the remote)
+# and "$DESTINATION_DIR" (which could be on the remote)
 #
 
 if [ "$SSH_ENABLED" = "yes" ] ; then
@@ -82,8 +82,8 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
     fi
     
     $SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
-		if [ ! -d $DESTINATION_DIR ] ; then
-    		$R_ECHO Error: $DESTINATION_DIR isn\'t a valid directory. ; exit 1;
+		if [ ! -d "$DESTINATION_DIR" ] ; then
+    		$R_ECHO Error: "$DESTINATION_DIR" isn\'t a valid directory. ; exit 1;
 		fi
     " ;
     
@@ -92,8 +92,8 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 	fi
     
 else
-	if [ ! -d $DESTINATION_DIR ] ; then
-    	$ECHO Error: $DESTINATION_DIR isn\'t a valid directory. ; exit 1;
+	if [ ! -d "$DESTINATION_DIR" ] ; then
+    	$ECHO Error: "$DESTINATION_DIR" isn\'t a valid directory. ; exit 1;
 	fi
 fi
 
@@ -128,10 +128,10 @@ esac
 if [ "$SSH_ENABLED" = "yes" ] ; then
 
     $SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
-		if [ -d $DESTINATION_DIR/$OLDEST_BKP ] ; then
-    		$R_MV $DESTINATION_DIR/$OLDEST_BKP \
-        		$DESTINATION_DIR/$OLDEST_BKP.delete
-    		$R_RM -rf $DESTINATION_DIR/$OLDEST_BKP.delete &
+		if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
+    		$R_MV "$DESTINATION_DIR/$OLDEST_BKP" \
+        		"$DESTINATION_DIR/$OLDEST_BKP.delete"
+    		$R_RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 		fi
     " ;
     
@@ -140,10 +140,10 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 	fi
 		
 else
-	if [ -d $DESTINATION_DIR/$OLDEST_BKP ] ; then
-    	$MV $DESTINATION_DIR/$OLDEST_BKP \
-        	$DESTINATION_DIR/$OLDEST_BKP.delete
-    	$RM -rf $DESTINATION_DIR/$OLDEST_BKP.delete &
+	if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
+    	$MV "$DESTINATION_DIR/$OLDEST_BKP" \
+        	"$DESTINATION_DIR/$OLDEST_BKP.delete"
+    	$RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 	fi
 fi
 
@@ -158,20 +158,20 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 
 	$RSYNC \
     	-ahz --delete --delete-excluded \
-		--link-dest=$DESTINATION_DIR/$NEWEST_BKP \
+		--link-dest="$DESTINATION_DIR/$NEWEST_BKP" \
     	$EXCLUDE_LINE \
     	--stats \
     	--rsync-path=$R_RSYNC \
     	-e "$SSH -p $SSHPORT -i $SSHKEY" \
-    	$SOURCE_DIR/ $USER@$SERVER:$DESTINATION_DIR/$OLDEST_BKP ;
+    	"$SOURCE_DIR/" $USER@$SERVER:"$DESTINATION_DIR/$OLDEST_BKP/" ;
 else
 	
 	$RSYNC \
     	-ah --delete --delete-excluded \
-		--link-dest=$DESTINATION_DIR/$NEWEST_BKP \
+		--link-dest="$DESTINATION_DIR/$NEWEST_BKP" \
     	$EXCLUDE_LINE \
     	--stats \
-    	$SOURCE_DIR/ $DESTINATION_DIR/$OLDEST_BKP/ ;
+    	"$SOURCE_DIR/" "$DESTINATION_DIR/$OLDEST_BKP/" ;
 fi
 
 ##############################################################################
@@ -181,14 +181,14 @@ fi
 if [ "$SSH_ENABLED" = "yes" ] ; then
 
     $SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
-    	$R_TOUCH $DESTINATION_DIR/$OLDEST_BKP
+    	$R_TOUCH "$DESTINATION_DIR/$OLDEST_BKP"
     " ;
     
 	if [ $? -ge 1 ]; then
     	exit 1;
 	fi
 else
-	$TOUCH $DESTINATION_DIR/$OLDEST_BKP ;
+	$TOUCH "$DESTINATION_DIR/$OLDEST_BKP" ;
 fi
 
 #

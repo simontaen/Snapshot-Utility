@@ -1,5 +1,7 @@
 #!/bin/sh
 
+########################## THIS IS VERSION 2.4.1 ###############################
+
 usage="
 Usage:
 
@@ -196,6 +198,9 @@ fi
 # is unlinked first.  If it were not so, this would copy over the other
 # snapshot(s) too!
 #
+
+# TODO: NEWEST_BKP should be LATEST_BKP, because if NEWEST_BKP does not exists
+# a whole new data set get created
 
 $ECHO -e "\n\n############ `$DATE '+%F_%H-%M-%S'` #############"
 

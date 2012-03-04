@@ -26,7 +26,7 @@ SSH=/usr/bin/ssh;
 SERVER=myServer.example.com;
 USER=root;
 SSHPORT=22;
-SSHKEY=/location/of/rsync/keys;
+SSHKEY=/location/of/ssh/keys;
 
 ##############################################################################
 # system commands subject to the remote machine

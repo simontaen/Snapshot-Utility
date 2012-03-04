@@ -1,5 +1,7 @@
 #!/bin/sh
 
+########################## THIS IS VERSION 2.4.1 ###############################
+
 usage="
 Usage:
 
@@ -102,7 +104,6 @@ case $BKP_MODE in
 		NEWEST_BKP=`$DATE +%Y -D %s -d $(( $($DATE +%s) - 31449600))`;;
 esac
 
-
 ##############################################################################
 # find existing source snapshot directories
 #
@@ -121,6 +122,8 @@ fi
 # ends at EOF
 for DESTINATION_DIR in $FIND_RESULT; do
 
+# here one could go further back and look for the latest source snapshot
+# in case NEWEST_OF_SRC_SNAPSHOT is not available
 if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" ] ; then
     $ECHO "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" isn\'t a valid directory. Skipping... ;
     continue ;

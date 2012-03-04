@@ -17,22 +17,33 @@ Explanation:
  destination_snapshot:	name of the destination snapshot folder
  source_snapshot_path:	path to the source snapshot folder
                         IN RELATION to the destination folder
-
-Example Crontab-lines:
-
-0 12 * * *  make_snapshot.sh /root/backup /home/ -f /root/make_snapshot_exclude;
-
 " ;
+
+RUNNING_DIR=`dirname $0`;
 
 unset PATH
 
-source ./make_snapshot_config.sh
+source "$RUNNING_DIR"/make_snapshot_config.sh
+
+##############################################################################
+# define a function to keep the error.log if errors exist,
+# assumes you put the error.log where the script is located!!
+#
+
+moveErrorLog()
+{
+if [ -s "$RUNNING_DIR"/error.log ] ; then
+	$MV "$RUNNING_DIR"/error.log "$RUNNING_DIR"/error_rotate_`$DATE +%F_%H-%M-%S`.log
+else
+	$RM -f "$RUNNING_DIR"/error.log;
+fi
+}
 
 ##############################################################################
 # make sure we're running as root
 #
 
-if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root.  Exiting...; exit 1; } fi
+if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root.  Exiting... >&2; moveErrorLog; exit 1; } fi
 
 ##############################################################################
 # checking arguments and options
@@ -43,23 +54,21 @@ do
 	case $flag in
 		w)	WORKING_DIR="$OPTARG";
 			if [ ! -d "$WORKING_DIR" ] ; then
-				$ECHO Error: "$WORKING_DIR" isn\'t a valid directory. ; exit 1;
+				$ECHO Error: "$WORKING_DIR" isn\'t a valid directory. >&2; moveErrorLog; exit 1;
 			fi;;
 		m)	BKP_MODE="$OPTARG"
 			case $BKP_MODE in
 				daily|weekly|monthly|yearly);;
-				*) $ECHO Error: Unsupported mode \""$OPTARG"\". ; exit 1;;
+				*) $ECHO Error: Unsupported mode \""$OPTARG"\". >&2; moveErrorLog; exit 1;;
 			esac;;
     	d) D_SNAPSHOT="$OPTARG";;
         s) S_SNAPSHOT="$OPTARG";;
-		?) $ECHO "$usage"; exit 1;;
+		?) $ECHO "$usage"; moveErrorLog; exit 1;;
 	esac
 done
 
 if [ -z "$WORKING_DIR" ] || [ -z "$BKP_MODE" ]; then
-    $ECHO Error: mandatory options not set.;
-    $ECHO "$usage";
-    exit 1;
+    $ECHO Error: mandatory options not set. >&2; $ECHO "$usage"; moveErrorLog; exit 1;
 fi;
 
 ##############################################################################
@@ -102,7 +111,7 @@ esac
 FIND_RESULT=`$FIND "$WORKING_DIR" -name $D_SNAPSHOT -type d -maxdepth 2`
 
 if [ -z "$FIND_RESULT" ] ; then
-    $ECHO Error: No directories named $D_SNAPSHOT in "$WORKING_DIR". ; exit 1;
+    $ECHO Error: No directories named $D_SNAPSHOT in "$WORKING_DIR". >&2; moveErrorLog; exit 1;
 fi
 
 ##############################################################################
@@ -133,10 +142,11 @@ fi
 # NEWEST_OF_SRC_SNAPSHOT into OLDEST_BKP
 #
 
+$ECHO -e "\n\n############ `$DATE +%F_%H-%M-%S` - $DESTINATION_DIR #############"
+
 $RSYNC \
-	-ah --delete --delete-excluded \
+	-ah --delete \
 	--link-dest="$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" \
-	$EXCLUDE_LINE \
 	--stats \
 	"$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT/" "$DESTINATION_DIR/$OLDEST_BKP/" ;
 
@@ -145,6 +155,12 @@ $RSYNC \
 # when NEWEST_OF_SRC_SNAPSHOT was made, which should be correct.
 
 done;
+
+##############################################################################
+# keep the error.log if errors exist
+#
+
+moveErrorLog;
 
 wait; # on deleting oldest snapshot
 

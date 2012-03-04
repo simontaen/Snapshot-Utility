@@ -17,19 +17,38 @@ Explanation:
 
 Example Crontab-lines:
 
-0 12 * * *  make_snapshot.sh /root/backup /home/ -f /root/make_snapshot_exclude;
+5 0	*	* * /path/to/make_snapshot.sh -s /precious/data -d /my/backup/local_dTank/daily_snapshots 2>> /path/to/error.log >> /dev/null;
+0 2	*	* 6 /path/to/snapshot_rotate.sh -w /my/backup/ -m weekly 2>> /path/to/error.log >> /dev/null;
+0 3	15	* * /path/to/snapshot_rotate.sh -w /my/backup/ -m monthly 2>> /path/to/error.log >> /dev/null;
+0 3	1	1 * /path/to/snapshot_rotate.sh -w /my/backup/ -m yearly 2>> /path/to/error.log >> /dev/null;
 
-" ; 
+" ;
+
+RUNNING_DIR=`dirname $0`;
 
 unset PATH
 
-source ./make_snapshot_config.sh
+source "$RUNNING_DIR"/make_snapshot_config.sh
+
+##############################################################################
+# define a function to keep the error.log if errors exist,
+# assumes you put the error.log where the script is located!!
+#
+
+moveErrorLog()
+{
+if [ -s "$RUNNING_DIR"/error.log ] ; then
+	$MV "$RUNNING_DIR"/error.log "$RUNNING_DIR"/error_make_`$DATE '+%F_%H-%M-%S'`.log
+else
+	$RM -f "$RUNNING_DIR"/error.log;
+fi
+}
 
 ##############################################################################
 # make sure we're running as root
 #
 
-if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root.  Exiting...; exit 1; } fi
+if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root. Exiting... >&2; moveErrorLog; exit 1; } fi
 
 ##############################################################################
 # checking arguments and options
@@ -40,22 +59,22 @@ do
 	case $flag in
 		s)	SOURCE_DIR="$OPTARG";
 			if [ ! -d "$SOURCE_DIR" ] ; then
-				$ECHO Error: "$SOURCE_DIR" isn\'t a valid directory. ; exit 1;
+				$ECHO Error: "$SOURCE_DIR" isn\'t a valid directory. >&2; moveErrorLog; exit 1;
 			fi;;
     	d) DESTINATION_DIR="$OPTARG";;
         f) 	EXCLUDE_FILE="$OPTARG";
         	if [ -f $EXCLUDE_FILE ] ; then
-        		EXCLUDE_LINE="--exclude-from=\"$EXCLUDE_FILE\"" ;
+        		EXCLUDE_LINE="--exclude-from=$EXCLUDE_FILE" ;
     		else
-        		$ECHO Error: $EXCLUDE_FILE isn\'t a valid file. ; exit 1;
+        		$ECHO Error: $EXCLUDE_FILE isn\'t a valid file. >&2; moveErrorLog; exit 1;
     		fi;;
 		m)	BKP_MODE="$OPTARG"
 			case $BKP_MODE in
 				daily|weekly|monthly|yearly);;
-				*) $ECHO Error: Unsupported mode \""$OPTARG"\". ; exit 1;;
+				*) $ECHO Error: Unsupported mode \""$OPTARG"\". >&2; moveErrorLog; exit 1;;
 			esac;;
         e) SSH_ENABLED="yes";;
-		?) $ECHO "$usage"; exit 1;;
+		?) $ECHO "$usage"; moveErrorLog; exit 1;;
 	esac
 done
 
@@ -64,9 +83,7 @@ if [ -z "$BKP_MODE" ] ; then
 fi
 
 if [ -z "$SOURCE_DIR" ] || [ -z "$DESTINATION_DIR" ]; then
-    $ECHO Error: mandatory options not set.;
-    $ECHO "$usage";
-    exit 1;
+    $ECHO Error: mandatory options not set. >&2; $ECHO "$usage"; moveErrorLog; exit 1;
 fi;
 
 ##############################################################################
@@ -78,22 +95,22 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
     if [ -z "$SSHPORT" ] || [ -z "$SSHKEY" ] || [ -z "$R_RSYNC" ] \
     	|| [ -z "$USER" ] || [ -z "$SERVER" ] || [ -z "$R_ECHO" ] \
 		|| [ -z "$R_MV" ] || [ -z "$R_RM" ] || [ -z "$R_TOUCH" ] || [ -z "$SSH" ]; then
-    	$ECHO Error: Missig Variables for SSH. ; exit 1;
+    	$ECHO Error: Missig Variables for SSH. >&2; exit 1;
     fi
     
     $SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
 		if [ ! -d "$DESTINATION_DIR" ] ; then
-    		$R_ECHO Error: "$DESTINATION_DIR" isn\'t a valid directory. ; exit 1;
+    		$R_ECHO Error: "$DESTINATION_DIR" isn\'t a valid directory. >&2; exit 1;
 		fi
     " ;
     
 	if [ $? -ge 1 ]; then
-    	exit 1;
+    	moveErrorLog; exit 1;
 	fi
     
 else
 	if [ ! -d "$DESTINATION_DIR" ] ; then
-    	$ECHO Error: "$DESTINATION_DIR" isn\'t a valid directory. ; exit 1;
+    	$ECHO Error: "$DESTINATION_DIR" isn\'t a valid directory. >&2; moveErrorLog; exit 1;
 	fi
 fi
 
@@ -101,23 +118,49 @@ fi
 # setting dates
 #
 
+OS=`$UNAME`;
+
 case $BKP_MODE in
 	hourly)
-		OLDEST_BKP=hour_`$DATE +%H`;
-		NEWEST_BKP=hour_`$DATE +%H -D %s -d $(( $($DATE +%s) - 3600))`;;
+		if [ "$OS" = "Darwin" ] ; then
+			OLDEST_BKP=hour_`$DATE '+%H'`;
+			NEWEST_BKP=hour_`$DATE -r $(( $($DATE '+%s') - 3600)) '+%H'`;
+		else
+			OLDEST_BKP=hour_`$DATE '+%H'`;
+			NEWEST_BKP=hour_`$DATE '+%H' -D %s -d $(( $($DATE '+%s') - 3600))`;
+		fi;;
 	daily) 
-		# if Today == Thursday
-		OLDEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`; # = 3-Wednesday
-		NEWEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 172800))`;; # = 2-Tuesday
+		if [ "$OS" = "Darwin" ] ; then
+			OLDEST_BKP=`$DATE -r $(( $($DATE '+%s') - 86400)) '+%u-%A'`; # = 3-Wednesday
+			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 172800)) '+%u-%A'`; # = 2-Tuesday
+		else
+			OLDEST_BKP=`$DATE '+%u-%A' -D %s -d $(( $($DATE '+%s') - 86400))`; # = 3-Wednesday
+			NEWEST_BKP=`$DATE '+%u-%A' -D %s -d $(( $($DATE '+%s') - 172800))`; # = 2-Tuesday
+		fi;;
 	weekly) 
-		OLDEST_BKP=week_`$DATE +%V`;
-		NEWEST_BKP=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`;;
+		if [ "$OS" = "Darwin" ] ; then
+			OLDEST_BKP=week_`$DATE '+%V'`;
+			NEWEST_BKP=week_`$DATE -r $(( $($DATE '+%s') - 604800)) '+%V'`;
+		else
+			OLDEST_BKP=week_`$DATE '+%V'`;
+			NEWEST_BKP=week_`$DATE '+%V' -D %s -d $(( $($DATE '+%s') - 604800))`;
+		fi;;
     monthly)
-		OLDEST_BKP=`$DATE +%m-%B`;
-		NEWEST_BKP=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 2419200))`;;
+		if [ "$OS" = "Darwin" ] ; then
+			OLDEST_BKP=`$DATE '+%m-%B'`;
+			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 2419200)) '+%m-%B'`;
+		else
+			OLDEST_BKP=`$DATE '+%m-%B'`;
+			NEWEST_BKP=`$DATE '+%m-%B' -D %s -d $(( $($DATE '+%s') - 2419200))`;
+		fi;;
     yearly)
-		OLDEST_BKP=`$DATE +%Y`;
-		NEWEST_BKP=`$DATE +%Y -D %s -d $(( $($DATE +%s) - 31449600))`;;
+		if [ "$OS" = "Darwin" ] ; then
+			OLDEST_BKP=`$DATE '+%Y'`;
+			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 31449600)) '+%Y'`;
+		else
+			OLDEST_BKP=`$DATE '+%Y'`;
+			NEWEST_BKP=`$DATE '+%Y' -D %s -d $(( $($DATE '+%s') - 31449600))`;
+		fi;;
 esac
 
 ##############################################################################
@@ -136,7 +179,7 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
     " ;
     
 	if [ $? -ge 1 ]; then
-    	exit 1;
+    	moveErrorLog; exit 1;
 	fi
 		
 else
@@ -154,12 +197,14 @@ fi
 # snapshot(s) too!
 #
 
+$ECHO -e "\n\n############ `$DATE '+%F_%H-%M-%S'` #############"
+
 if [ "$SSH_ENABLED" = "yes" ] ; then
 
 	$RSYNC \
-    	-ahz --delete --delete-excluded \
+    	-ahvz --delete --delete-excluded \
 		--link-dest="$DESTINATION_DIR/$NEWEST_BKP" \
-    	$EXCLUDE_LINE \
+    	"$EXCLUDE_LINE" \
     	--stats \
     	--rsync-path=$R_RSYNC \
     	-e "$SSH -p $SSHPORT -i $SSHKEY" \
@@ -167,9 +212,9 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 else
 	
 	$RSYNC \
-    	-ah --delete --delete-excluded \
+    	-ahv --delete --delete-excluded \
 		--link-dest="$DESTINATION_DIR/$NEWEST_BKP" \
-    	$EXCLUDE_LINE \
+		"$EXCLUDE_LINE" \
     	--stats \
     	"$SOURCE_DIR/" "$DESTINATION_DIR/$OLDEST_BKP/" ;
 fi
@@ -185,11 +230,17 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
     " ;
     
 	if [ $? -ge 1 ]; then
-    	exit 1;
+    	moveErrorLog; exit 1;
 	fi
 else
 	$TOUCH "$DESTINATION_DIR/$OLDEST_BKP" ;
 fi
+
+##############################################################################
+# keep the error.log if errors exist
+#
+
+moveErrorLog;
 
 #
 # EOF

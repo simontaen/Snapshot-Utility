@@ -1,7 +1,5 @@
 #!/bin/sh
 
-########################## THIS IS VERSION 2.4.1 ###############################
-
 usage="
 Usage:
 
@@ -25,7 +23,8 @@ RUNNING_DIR=`dirname $0`;
 
 unset PATH
 
-source "$RUNNING_DIR"/make_snapshot_config.sh
+source "$RUNNING_DIR"/config_snapshot.conf
+LOGS_DIR="$RUNNING_DIR"/logs
 
 ##############################################################################
 # define a function to keep the error.log if errors exist,
@@ -34,10 +33,10 @@ source "$RUNNING_DIR"/make_snapshot_config.sh
 
 moveErrorLog()
 {
-if [ -s "$RUNNING_DIR"/error.log ] ; then
-	$MV "$RUNNING_DIR"/error.log "$RUNNING_DIR"/error_rotate_`$DATE +%F_%H-%M-%S`.log
+if [ -s "$LOGS_DIR"/rotate_error.log ] ; then
+	$MV "$LOGS_DIR"/rotate_error.log "$LOGS_DIR"/rotate_error_`$DATE +%F_%H-%M-%S`.log
 else
-	$RM -f "$RUNNING_DIR"/error.log;
+	$RM -f "$LOGS_DIR"/rotate_error.log;
 fi
 }
 

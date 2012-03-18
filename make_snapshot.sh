@@ -1,7 +1,5 @@
 #!/bin/sh
 
-########################## THIS IS VERSION 2.4.1 ###############################
-
 usage="
 Usage:
 
@@ -17,20 +15,14 @@ Explanation:
  e					enables SSH mode
  mode:				one of {hourly|daily|weekly|monthly|yearly}, default daily
 
-Example Crontab-lines:
-
-5 0	*	* * /path/to/make_snapshot.sh -s /precious/data -d /my/backup/local_dTank/daily_snapshots 2>> /path/to/error.log >> /dev/null;
-0 2	*	* 6 /path/to/snapshot_rotate.sh -w /my/backup/ -m weekly 2>> /path/to/error.log >> /dev/null;
-0 3	15	* * /path/to/snapshot_rotate.sh -w /my/backup/ -m monthly 2>> /path/to/error.log >> /dev/null;
-0 3	1	1 * /path/to/snapshot_rotate.sh -w /my/backup/ -m yearly 2>> /path/to/error.log >> /dev/null;
-
 " ;
 
 RUNNING_DIR=`dirname $0`;
 
 unset PATH
 
-source "$RUNNING_DIR"/make_snapshot_config.sh
+source "$RUNNING_DIR"/config_snapshot.conf
+LOGS_DIR="$RUNNING_DIR"/logs
 
 ##############################################################################
 # define a function to keep the error.log if errors exist,
@@ -39,10 +31,10 @@ source "$RUNNING_DIR"/make_snapshot_config.sh
 
 moveErrorLog()
 {
-if [ -s "$RUNNING_DIR"/error.log ] ; then
-	$MV "$RUNNING_DIR"/error.log "$RUNNING_DIR"/error_make_`$DATE '+%F_%H-%M-%S'`.log
+if [ -s "$LOGS_DIR"/make_error.log ] ; then
+	$MV "$LOGS_DIR"/make_error.log "$LOGS_DIR"/make_error_`$DATE '+%F_%H-%M-%S'`.log
 else
-	$RM -f "$RUNNING_DIR"/error.log;
+	$RM -f "$LOGS_DIR"/make_error.log;
 fi
 }
 

@@ -1,5 +1,7 @@
 #!/bin/sh
 
+#################### VERSION 2.5 ####################
+
 usage="
 Usage:
 
@@ -79,26 +81,30 @@ fi;
 case $BKP_MODE in
 	daily) 
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=daily_snapshots; } fi;
-		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../hourly_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT=hour_`$DATE +%H`;
+		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../hourly_snapshots; } fi; 
+		NEWEST_OF_SRC_SNAPSHOT_1=hour_`$DATE +%H`;
+		NEWEST_OF_SRC_SNAPSHOT_2=hour_`$DATE +%H -D %s -d $(( $($DATE +%s) - 3600))`;
 		OLDEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`; # = 3-Wednesday
 		NEWEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 172800))`;; # = 2-Tuesday
 	weekly)
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=weekly_snapshots; } fi;
 		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../daily_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`;
+		NEWEST_OF_SRC_SNAPSHOT_1=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`;
+		NEWEST_OF_SRC_SNAPSHOT_2=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 172800))`;
 		OLDEST_BKP=week_`$DATE +%V`;
 		NEWEST_BKP=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`;;
     monthly)
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=monthly_snapshots; } fi;
 		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../weekly_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT=week_`$DATE +%V`;
+		NEWEST_OF_SRC_SNAPSHOT_1=week_`$DATE +%V`;
+		NEWEST_OF_SRC_SNAPSHOT_2=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`;
 		OLDEST_BKP=`$DATE +%m-%B`;
 		NEWEST_BKP=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 2419200))`;;
     yearly)
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=yearly_snapshots; } fi;
 		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../monthly_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT=`$DATE +%m-%B`;
+		NEWEST_OF_SRC_SNAPSHOT_1=`$DATE +%m-%B`;
+		NEWEST_OF_SRC_SNAPSHOT_2=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 2419200))`;
 		OLDEST_BKP=`$DATE +%Y`;
 		NEWEST_BKP=`$DATE +%Y -D %s -d $(( $($DATE +%s) - 31449600))`;;
 esac
@@ -123,9 +129,13 @@ for DESTINATION_DIR in $FIND_RESULT; do
 
 # here one could go further back and look for the latest source snapshot
 # in case NEWEST_OF_SRC_SNAPSHOT is not available
-if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" ] ; then
-    $ECHO "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT" isn\'t a valid directory. Skipping... ;
-    continue ;
+NEWEST_OF_SRC_SNAPSHOT="$NEWEST_OF_SRC_SNAPSHOT_1"
+if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_1" ] ; then
+    if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_2" ] ; then
+		    $ECHO "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_1" and "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_2" aren\'t a valid directories. Skipping... ;
+		    continue ;
+	fi
+	NEWEST_OF_SRC_SNAPSHOT="$NEWEST_OF_SRC_SNAPSHOT_2"
 fi
 
 ##############################################################################

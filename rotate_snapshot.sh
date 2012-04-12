@@ -132,6 +132,7 @@ for DESTINATION_DIR in $FIND_RESULT; do
 NEWEST_OF_SRC_SNAPSHOT="$NEWEST_OF_SRC_SNAPSHOT_1"
 if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_1" ] ; then
     if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_2" ] ; then
+    		$ECHO -e "\n\n############ `$DATE +%F_%H-%M-%S` - $DESTINATION_DIR #############"
 		    $ECHO "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_1" and "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_2" aren\'t a valid directories. Skipping... ;
 		    continue ;
 	fi

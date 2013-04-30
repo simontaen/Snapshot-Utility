@@ -1,18 +1,34 @@
 #!/bin/sh
 
-#################### VERSION 2.5 ####################
+#################### VERSION 2.6 ####################
+
+ID=`which id`;
+ECHO=`which echo`;
+RM=`which rm`;
+MV=`which mv`;
+CP=`which cp`;
+TOUCH=`which touch`;
+DATE=`which date`;
+RSYNC=`which rsync`;
+FIND=`which find`;
+UNAME=`which uname`;
+SSH=`which ssh`;
+
+##############################################################################
+#
 
 usage="
 Usage:
 
- $0 -s source_dir -d destination_dir
+ $0 -c config_file -s source_dir -d destination_dir
  		[-f exclude_file] [-m mode] [-e]
 
 Explanation:
 
+ config_file:		a file that contains all config
  source_dir:		the directory to backup
  destination_dir:	the destination directory
-
+ 
  exclude_file:		a file for rsync --exclude-from, default it is unset
  e					enables SSH mode
  mode:				one of {hourly|daily|weekly|monthly|yearly}, default daily
@@ -20,10 +36,6 @@ Explanation:
 " ;
 
 RUNNING_DIR=`dirname $0`;
-
-unset PATH
-
-source "$RUNNING_DIR"/config_snapshot.conf
 LOGS_DIR="$RUNNING_DIR"/logs
 
 ##############################################################################
@@ -41,24 +53,22 @@ fi
 }
 
 ##############################################################################
-# make sure we're running as root
-#
-
-if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root. Exiting... >&2; moveErrorLog; exit 1; } fi
-
-##############################################################################
 # checking arguments and options
 #
 
-while $GETOPT s:d:f:m:eh flag
+while getopts c:s:d:f:m:eh flag
 do
 	case $flag in
+		c)	CONFIG_FILE="$OPTARG";
+			if [ ! -f "$CONFIG_FILE" ] ; then
+				$ECHO Error: "$CONFIG_FILE" isn\'t a valid file. >&2; moveErrorLog; exit 1;
+        	fi;;
 		s)	SOURCE_DIR="$OPTARG";
 			if [ ! -d "$SOURCE_DIR" ] ; then
 				$ECHO Error: "$SOURCE_DIR" isn\'t a valid directory. >&2; moveErrorLog; exit 1;
 			fi;;
-    	d) DESTINATION_DIR="$OPTARG";;
-        f) 	EXCLUDE_FILE="$OPTARG";
+    	d)	DESTINATION_DIR="$OPTARG";;
+        f)	EXCLUDE_FILE="$OPTARG";
         	if [ -f $EXCLUDE_FILE ] ; then
         		EXCLUDE_LINE="--exclude-from=$EXCLUDE_FILE" ;
     		else
@@ -78,9 +88,28 @@ if [ -z "$BKP_MODE" ] ; then
     BKP_MODE=daily;
 fi
 
-if [ -z "$SOURCE_DIR" ] || [ -z "$DESTINATION_DIR" ]; then
-    $ECHO Error: mandatory options not set. >&2; $ECHO "$usage"; moveErrorLog; exit 1;
+if [ -z "$SOURCE_DIR" ]; then
+	$ECHO Error: mandatory option source_dir not set. >&2; $ECHO "$usage"; moveErrorLog; exit 1;
 fi;
+if [ -z "$DESTINATION_DIR" ]; then
+	$ECHO Error: mandatory option destination_dir not set. >&2; $ECHO "$usage"; moveErrorLog; exit 1;
+fi;
+if [ "$SSH_ENABLED" = "yes" ] ; then
+	if [ -z "$CONFIG_FILE" ]; then
+		$ECHO Error: mandatory option config_file not set. >&2; $ECHO "$usage"; moveErrorLog; exit 1;
+	else
+		source "$CONFIG_FILE";
+	fi;
+fi
+
+unset PATH
+
+
+##############################################################################
+# make sure we're running as root
+#
+
+if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root. Exiting... >&2; moveErrorLog; exit 1; } fi
 
 ##############################################################################
 # advanced checking of SSH arguments
@@ -117,51 +146,51 @@ fi
 OS=`$UNAME`;
 
 case $BKP_MODE in
-	hourly)
+	hourly) # assumes creation in same hour
 		if [ "$OS" = "Darwin" ] ; then
 			OLDEST_BKP=hour_`$DATE '+%H'`;
 			NEWEST_BKP=hour_`$DATE -r $(( $($DATE '+%s') - 3600)) '+%H'`;
 		else
-			OLDEST_BKP=hour_`$DATE '+%H'`;
-			NEWEST_BKP=hour_`$DATE '+%H' -D %s -d $(( $($DATE '+%s') - 3600))`;
+			OLDEST_BKP=hour_`$DATE '+%H'`; # this hour
+			NEWEST_BKP=hour_`$DATE '+%H' -D %s -d $(( $($DATE '+%s') - 3600))`; # last hour
 		fi;;
-	daily) 
+	daily) # assumes creation on same day
 		if [ "$OS" = "Darwin" ] ; then
-			OLDEST_BKP=`$DATE -r $(( $($DATE '+%s') - 86400)) '+%u-%A'`; # = 3-Wednesday
-			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 172800)) '+%u-%A'`; # = 2-Tuesday
+			OLDEST_BKP=`$DATE '+%u-%A'`;
+			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 86400)) '+%u-%A'`;
 		else
-			OLDEST_BKP=`$DATE '+%u-%A' -D %s -d $(( $($DATE '+%s') - 86400))`; # = 3-Wednesday
-			NEWEST_BKP=`$DATE '+%u-%A' -D %s -d $(( $($DATE '+%s') - 172800))`; # = 2-Tuesday
+			OLDEST_BKP=`$DATE +%u-%A -D %s`; # = today
+			NEWEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`; # = yesterday
 		fi;;
-	weekly) 
+	weekly) # assumes creation in same week
 		if [ "$OS" = "Darwin" ] ; then
 			OLDEST_BKP=week_`$DATE '+%V'`;
 			NEWEST_BKP=week_`$DATE -r $(( $($DATE '+%s') - 604800)) '+%V'`;
 		else
-			OLDEST_BKP=week_`$DATE '+%V'`;
-			NEWEST_BKP=week_`$DATE '+%V' -D %s -d $(( $($DATE '+%s') - 604800))`;
+			OLDEST_BKP=week_`$DATE '+%V'`; # this week
+			NEWEST_BKP=week_`$DATE '+%V' -D %s -d $(( $($DATE '+%s') - 604800))`; # last week
 		fi;;
-    monthly)
+    monthly) # assumes creation in SECOND HALF of same month (at least 2 digit day!)
 		if [ "$OS" = "Darwin" ] ; then
 			OLDEST_BKP=`$DATE '+%m-%B'`;
-			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 2419200)) '+%m-%B'`;
+			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 3024000)) '+%m-%B'`;
 		else
-			OLDEST_BKP=`$DATE '+%m-%B'`;
-			NEWEST_BKP=`$DATE '+%m-%B' -D %s -d $(( $($DATE '+%s') - 2419200))`;
+			OLDEST_BKP=`$DATE '+%m-%B'`; # this month
+			NEWEST_BKP=`$DATE '+%m-%B' -D %s -d $(( $($DATE '+%s') - 3024000))`; # last month (-35 days)
 		fi;;
-    yearly)
+    yearly) # assumes creation in same year
 		if [ "$OS" = "Darwin" ] ; then
 			OLDEST_BKP=`$DATE '+%Y'`;
-			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 31449600)) '+%Y'`;
+			NEWEST_BKP=`$DATE -r $(( $($DATE '+%s') - 31968000)) '+%Y'`;
 		else
-			OLDEST_BKP=`$DATE '+%Y'`;
-			NEWEST_BKP=`$DATE '+%Y' -D %s -d $(( $($DATE '+%s') - 31449600))`;
+			OLDEST_BKP=`$DATE '+%Y'`; # this year
+			NEWEST_BKP=`$DATE '+%Y' -D %s -d $(( $($DATE '+%s') - 31968000))`; # last year (-370 days)
 		fi;;
 esac
 
 ##############################################################################
 # rotating snapshots
-# delete the oldest snapshot in background, if it exists:
+# move the oldest snapshot, if it exists (don't delete yet):
 #
 
 if [ "$SSH_ENABLED" = "yes" ] ; then
@@ -170,7 +199,6 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 		if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
     		$R_MV "$DESTINATION_DIR/$OLDEST_BKP" \
         		"$DESTINATION_DIR/$OLDEST_BKP.delete"
-    		$R_RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 		fi
     " ;
     
@@ -182,7 +210,6 @@ else
 	if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
     	$MV "$DESTINATION_DIR/$OLDEST_BKP" \
         	"$DESTINATION_DIR/$OLDEST_BKP.delete"
-    	$RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 	fi
 fi
 
@@ -236,10 +263,31 @@ else
 fi
 
 ##############################################################################
+# rotating snapshots
+# delete the oldest snapshot now, if it exists:
+#
+
+if [ "$SSH_ENABLED" = "yes" ] ; then
+
+	$SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
+		$R_RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
+	" ;
+
+	if [ $? -ge 1 ]; then
+		moveErrorLog; exit 1;
+	fi
+
+else
+	$RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
+fi
+
+##############################################################################
 # keep the error.log if errors exist
 #
 
 moveErrorLog;
+
+wait; # on deleting oldest snapshot and clean up of weekly backups
 
 #
 # EOF

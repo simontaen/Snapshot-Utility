@@ -1,6 +1,18 @@
 #!/bin/sh
 
-#################### VERSION 2.5 ####################
+#################### VERSION 2.6 ####################
+
+ID=`which id`;
+ECHO=`which echo`;
+RM=`which rm`;
+MV=`which mv`;
+CP=`which cp`;
+DATE=`which date`;
+RSYNC=`which rsync`;
+FIND=`which find`;
+
+##############################################################################
+#
 
 usage="
 Usage:
@@ -25,7 +37,6 @@ RUNNING_DIR=`dirname $0`;
 
 unset PATH
 
-source "$RUNNING_DIR"/config_snapshot.conf
 LOGS_DIR="$RUNNING_DIR"/logs
 
 ##############################################################################
@@ -52,7 +63,7 @@ if [ `$ID -u` != 0 ]; then { $ECHO Sorry, must be root.  Exiting... >&2; moveErr
 # checking arguments and options
 #
 
-while $GETOPT w:m:d:s:h flag
+while getopts w:m:d:s:h flag
 do
 	case $flag in
 		w)	WORKING_DIR="$OPTARG";
@@ -81,54 +92,62 @@ fi;
 case $BKP_MODE in
 	daily) 
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=daily_snapshots; } fi;
-		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../hourly_snapshots; } fi; 
+		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../hourly_snapshots; } fi;
+		# You would need to know if the current hour has been done already
 		NEWEST_OF_SRC_SNAPSHOT_1=hour_`$DATE +%H`;
 		NEWEST_OF_SRC_SNAPSHOT_2=hour_`$DATE +%H -D %s -d $(( $($DATE +%s) - 3600))`;
-		OLDEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`; # = 3-Wednesday
-		NEWEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 172800))`;; # = 2-Tuesday
+		# Assumes rotation on same day
+		OLDEST_BKP=`$DATE +%u-%A -D %s`; # = today
+		NEWEST_BKP=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`;; # = yesterday
 	weekly)
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=weekly_snapshots; } fi;
 		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../daily_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT_1=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`;
-		NEWEST_OF_SRC_SNAPSHOT_2=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 172800))`;
-		OLDEST_BKP=week_`$DATE +%V`;
-		NEWEST_BKP=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`;;
-    monthly)
+		# Daily did NOT run -> date correction
+		NEWEST_OF_SRC_SNAPSHOT_1=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 86400))`; # yesterday
+		NEWEST_OF_SRC_SNAPSHOT_2=`$DATE +%u-%A -D %s -d $(( $($DATE +%s) - 172800))`; # day before yesterday
+		# Rotation in the same week, no correction
+		OLDEST_BKP=week_`$DATE +%V`; # this week
+		NEWEST_BKP=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`;; # last week
+	monthly)
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=monthly_snapshots; } fi;
 		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../weekly_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT_1=week_`$DATE +%V`;
-		NEWEST_OF_SRC_SNAPSHOT_2=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`;
-		OLDEST_BKP=`$DATE +%m-%B`;
-		NEWEST_BKP=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 2419200))`;;
-    yearly)
+		# Weekly DID run, no correction
+		NEWEST_OF_SRC_SNAPSHOT_1=week_`$DATE +%V`; # this week
+		NEWEST_OF_SRC_SNAPSHOT_2=week_`$DATE +%V -D %s -d $(( $($DATE +%s) - 604800))`; # last week
+		# Rotation on the first sunday of NEXT month -> date correction
+		OLDEST_BKP=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 691200))`; # last month ( - 8 days)
+		NEWEST_BKP=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 3456000))`;; # next to last month (- 40 days)
+	yearly)
 		if [ -z "$D_SNAPSHOT" ] ; then { D_SNAPSHOT=yearly_snapshots; } fi;
 		if [ -z "$S_SNAPSHOT" ] ; then { S_SNAPSHOT=../monthly_snapshots; } fi;
-		NEWEST_OF_SRC_SNAPSHOT_1=`$DATE +%m-%B`;
-		NEWEST_OF_SRC_SNAPSHOT_2=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 2419200))`;
-		OLDEST_BKP=`$DATE +%Y`;
-		NEWEST_BKP=`$DATE +%Y -D %s -d $(( $($DATE +%s) - 31449600))`;;
+		# Monthly DID run, no correction
+		NEWEST_OF_SRC_SNAPSHOT_1=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 2592000))`; # 12-December (-30 days)
+		NEWEST_OF_SRC_SNAPSHOT_2=`$DATE +%m-%B -D %s -d $(( $($DATE +%s) - 5184000))`; # 11-November (-60 days)
+		# Rotation NEXT year -> date correction
+		OLDEST_BKP=`$DATE +%Y -D %s -d $(( $($DATE +%s) - 25920000))`; # last year (-300 days)
+		NEWEST_BKP=`$DATE +%Y -D %s -d $(( $($DATE +%s) - 51840000))`;; # next to last year (-600 days)
 esac
 
 ##############################################################################
-# find existing source snapshot directories
+# find destination directories for chosen mode (weekly -> weekly_snapshots)
 #
 
+ALL_FOUND_DESTINATION_DIRS=`$FIND "$WORKING_DIR" -name $D_SNAPSHOT -type d -maxdepth 2`
 
-FIND_RESULT=`$FIND "$WORKING_DIR" -name $D_SNAPSHOT -type d -maxdepth 2`
-
-if [ -z "$FIND_RESULT" ] ; then
+if [ -z "$ALL_FOUND_DESTINATION_DIRS" ] ; then
     $ECHO Error: No directories named $D_SNAPSHOT in "$WORKING_DIR". >&2; moveErrorLog; exit 1;
 fi
 
 ##############################################################################
-# loop over source snapshots in 
+# loop over destination snapshots in ALL_FOUND_DESTINATION_DIRS
 #
 
 # ends at EOF
-for DESTINATION_DIR in $FIND_RESULT; do
+for DESTINATION_DIR in $ALL_FOUND_DESTINATION_DIRS; do
 
-# here one could go further back and look for the latest source snapshot
-# in case NEWEST_OF_SRC_SNAPSHOT is not available
+# here we go further back and look for the latest source snapshot,
+# either NEWEST_OF_SRC_SNAPSHOT_1 or NEWEST_OF_SRC_SNAPSHOT_2 depending
+# on which is available
 NEWEST_OF_SRC_SNAPSHOT="$NEWEST_OF_SRC_SNAPSHOT_1"
 if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_1" ] ; then
     if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_2" ] ; then
@@ -138,6 +157,19 @@ if [ ! -d "$DESTINATION_DIR/$S_SNAPSHOT/$NEWEST_OF_SRC_SNAPSHOT_1" ] ; then
 	fi
 	NEWEST_OF_SRC_SNAPSHOT="$NEWEST_OF_SRC_SNAPSHOT_2"
 fi
+
+##############################################################################
+# clean up old weekly backups (I found that they are rarely used)
+#
+
+case $BKP_MODE in
+	weekly)
+		# find week_* folders older that 50 days
+		OLD_WEEKLY_BACKUPS=`$FIND "$DESTINATION_DIR" -name "week_*" -type d -mtime +30 -maxdepth 1 -print`
+		for WEEKLY_BACKUP in $OLD_WEEKLY_BACKUPS; do
+			$RM -rf "$WEEKLY_BACKUP" &
+		done;
+esac
 
 ##############################################################################
 # rotating snapshots
@@ -175,7 +207,7 @@ done;
 
 moveErrorLog;
 
-wait; # on deleting oldest snapshot
+wait; # on deleting oldest snapshot and clean up of weekly backups
 
 #
 # EOF

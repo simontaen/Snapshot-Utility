@@ -1,6 +1,6 @@
 #!/bin/sh
 
-#################### VERSION 2.6 ####################
+#################### VERSION 3.0 ####################
 
 ID=`which id`;
 ECHO=`which echo`;
@@ -13,6 +13,8 @@ RSYNC=`which rsync`;
 FIND=`which find`;
 UNAME=`which uname`;
 SSH=`which ssh`;
+SLEEP=`which sleep`;
+KILL=`which kill`;
 
 ##############################################################################
 #
@@ -21,7 +23,7 @@ usage="
 Usage:
 
  $0 -c config_file -s source_dir -d destination_dir
- 		[-f exclude_file] [-m mode] [-e]
+ 		[-f exclude_file] [-m mode] [-t timeout] [-e]
 
 Explanation:
 
@@ -30,8 +32,9 @@ Explanation:
  destination_dir:	the destination directory
  
  exclude_file:		a file for rsync --exclude-from, default it is unset
- e					enables SSH mode
  mode:				one of {hourly|daily|weekly|monthly|yearly}, default daily
+ timeout			timeout in seconds, only integer values supported, default 21600 (6 hours)
+ e					enables SSH mode, default disabled
 
 " ;
 
@@ -56,7 +59,7 @@ fi
 # checking arguments and options
 #
 
-while getopts c:s:d:f:m:eh flag
+while getopts c:s:d:f:m:t:eh flag
 do
 	case $flag in
 		c)	CONFIG_FILE="$OPTARG";
@@ -79,13 +82,17 @@ do
 				daily|weekly|monthly|yearly);;
 				*) $ECHO Error: Unsupported mode \""$OPTARG"\". >&2; moveErrorLog; exit 1;;
 			esac;;
-        e) SSH_ENABLED="yes";;
-		?) $ECHO "$usage"; moveErrorLog; exit 1;;
+		d)	TIMEOUT_IN_SEC="$OPTARG";;
+		e)	SSH_ENABLED="yes";;
+		?)	$ECHO "$usage"; moveErrorLog; exit 1;;
 	esac
 done
 
 if [ -z "$BKP_MODE" ] ; then
-    BKP_MODE=daily;
+	BKP_MODE=daily;
+fi
+if [ -z "$TIMEOUT_IN_SEC" ] ; then
+	TIMEOUT_IN_SEC=21600; # 6 hours
 fi
 
 if [ -z "$SOURCE_DIR" ]; then
@@ -190,15 +197,15 @@ esac
 
 ##############################################################################
 # rotating snapshots
-# move the oldest snapshot, if it exists (don't delete yet):
+# delete the oldest snapshot in background, if it exists:
 #
 
 if [ "$SSH_ENABLED" = "yes" ] ; then
 
     $SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
 		if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
-    		$R_MV "$DESTINATION_DIR/$OLDEST_BKP" \
-        		"$DESTINATION_DIR/$OLDEST_BKP.delete"
+    		$R_MV "$DESTINATION_DIR/$OLDEST_BKP" "$DESTINATION_DIR/$OLDEST_BKP.delete";
+    		$R_RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 		fi
     " ;
     
@@ -208,10 +215,19 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 		
 else
 	if [ -d "$DESTINATION_DIR/$OLDEST_BKP" ] ; then
-    	$MV "$DESTINATION_DIR/$OLDEST_BKP" \
-        	"$DESTINATION_DIR/$OLDEST_BKP.delete"
+		$MV "$DESTINATION_DIR/$OLDEST_BKP" "$DESTINATION_DIR/$OLDEST_BKP.delete";
+    	$RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 	fi
 fi
+
+##############################################################################
+# setting timeout variables
+#
+
+SLEEP_INTERVAL=30; # every 30 seconds
+SECONDS_ELAPSED=0; # time elapsed since start of command
+RSYNC_FINISHED=0;
+
 
 ##############################################################################
 # rsync from the system into the latest snapshot (notice that
@@ -223,7 +239,7 @@ fi
 # TODO: NEWEST_BKP should be LATEST_BKP, because if NEWEST_BKP does not exists
 # a whole new data set get created
 
-$ECHO -e "\n\n############ `$DATE '+%F_%H-%M-%S'` #############"
+$ECHO -e "############ `$DATE '+%F_%H-%M-%S'` #############"
 
 if [ "$SSH_ENABLED" = "yes" ] ; then
 
@@ -234,7 +250,7 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
     	--stats \
     	--rsync-path=$R_RSYNC \
     	-e "$SSH -p $SSHPORT -i $SSHKEY" \
-    	"$SOURCE_DIR/" $USER@$SERVER:"$DESTINATION_DIR/$OLDEST_BKP/" ;
+    	"$SOURCE_DIR/" $USER@$SERVER:"$DESTINATION_DIR/$OLDEST_BKP/" &
 else
 	
 	$RSYNC \
@@ -242,8 +258,35 @@ else
 		--link-dest="$DESTINATION_DIR/$NEWEST_BKP" \
 		"$EXCLUDE_LINE" \
     	--stats \
-    	"$SOURCE_DIR/" "$DESTINATION_DIR/$OLDEST_BKP/" ;
+    	"$SOURCE_DIR/" "$DESTINATION_DIR/$OLDEST_BKP/" &
 fi
+
+# timeout for the RSYNC command
+
+RSYNC_PID=$!;
+$ECHO "RSYNC has PID=$RSYNC_PID";
+while [[ $SECONDS_ELAPSED -le $TIMEOUT_IN_SEC ]] && [[ $RSYNC_FINISHED -eq 0 ]]; do
+	$SLEEP $SLEEP_INTERVAL;
+	SECONDS_ELAPSED=$(( $SECONDS_ELAPSED + $SLEEP_INTERVAL )) 
+	$KILL -0 $RSYNC_PID > /dev/null 2>&1;
+	RSYNC_FINISHED=$?;
+done
+
+$KILL -15 $RSYNC_PID > /dev/null 2>&1;
+if [[ $? -eq 0 ]] ; then
+	$ECHO "Process ($RSYNC_PID) timeout"
+else
+	$ECHO "Process ($RSYNC_PID) finished"
+fi
+
+## If the timeout is executed you'll get the following error message:
+## 
+## ==> /volume1/backup/util/logs/make_error_2013-05-08_15-46-29.log <==
+## rsync error: received SIGINT, SIGTERM, or SIGHUP (code 20) at rsync.c(598) [sender=3.0.9]
+## 
+## I should think about a solution to that, b/c it's not that pretty.
+
+
 
 ##############################################################################
 # update the mtime of $OLDEST_BKP to reflect the snapshot time
@@ -260,25 +303,6 @@ if [ "$SSH_ENABLED" = "yes" ] ; then
 	fi
 else
 	$TOUCH "$DESTINATION_DIR/$OLDEST_BKP" ;
-fi
-
-##############################################################################
-# rotating snapshots
-# delete the oldest snapshot now, if it exists:
-#
-
-if [ "$SSH_ENABLED" = "yes" ] ; then
-
-	$SSH -p $SSHPORT -i $SSHKEY $USER@$SERVER "
-		$R_RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
-	" ;
-
-	if [ $? -ge 1 ]; then
-		moveErrorLog; exit 1;
-	fi
-
-else
-	$RM -rf "$DESTINATION_DIR/$OLDEST_BKP.delete" &
 fi
 
 ##############################################################################
